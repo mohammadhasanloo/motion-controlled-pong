@@ -13,11 +13,9 @@ import android.hardware.SensorManager;
 import android.view.MotionEvent;
 import android.view.View;
 
-import com.example.mypongv2.Ball;
-import com.example.mypongv2.SATCollision;
+import com.example.mypongv2.geometry.Polygon;
+import com.example.mypongv2.geometry.SatCollision;
 
-import java.util.ArrayList;
-import java.util.List;
 
 public class PongGameView extends View implements SensorEventListener {
     private Paint paint;
@@ -49,13 +47,36 @@ public class PongGameView extends View implements SensorEventListener {
         sensorManager = (SensorManager) context.getSystemService(Context.SENSOR_SERVICE);
         accelerometer = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER);
         gyroscope = sensorManager.getDefaultSensor(Sensor.TYPE_GYROSCOPE);
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
-        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
-
-        resetButton = new ResetButton(10, 10, 110, 60); // Adjust the position and size as needed
-
         linearAcceleration = sensorManager.getDefaultSensor(Sensor.TYPE_LINEAR_ACCELERATION);
-        sensorManager.registerListener(this, linearAcceleration, SensorManager.SENSOR_DELAY_GAME);
+
+        resetButton = new ResetButton(10, 10, 110, 60);
+    }
+
+    /**
+     * Sensor listeners are bound to the window lifecycle.
+     *
+     * <p>Registering without a matching unregister would leave the SensorManager
+     * holding a reference to this view for the life of the process, keeping the
+     * sensors sampling and draining battery after the game leaves the screen.
+     */
+    @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        registerSensor(accelerometer);
+        registerSensor(gyroscope);
+        registerSensor(linearAcceleration);
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        sensorManager.unregisterListener(this);
+        super.onDetachedFromWindow();
+    }
+
+    private void registerSensor(Sensor sensor) {
+        if (sensor != null) {
+            sensorManager.registerListener(this, sensor, SensorManager.SENSOR_DELAY_GAME);
+        }
     }
 
     @Override
@@ -160,14 +181,12 @@ public class PongGameView extends View implements SensorEventListener {
         Polygon ballPolygon = ball.getPolygon();
         Polygon paddlePolygon = getPaddlePolygon();
 
-        if (SATCollision.checkCollision(ballPolygon, paddlePolygon)) {
+        if (SatCollision.intersects(ballPolygon, paddlePolygon)) {
             // Calculate the angle of reflection based on the paddle's angle
             float angleOfReflection = (float) Math.toRadians(90 - paddleAngle);
             float newVelocityX = (float) (ball.getVelocityX() * Math.cos(angleOfReflection) + ball.getVelocityY() * Math.sin(angleOfReflection));
             float newVelocityY = (float) (-ball.getVelocityX() * Math.sin(angleOfReflection) + ball.getVelocityY() * Math.cos(angleOfReflection));
 
-//            ball.setVelocityX(newVelocityX);
-//            ball.setVelocityY(newVelocityY);
 
             // Increase ball speed based on zAcceleration
             float speedMultiplier = 1.0f + Math.abs(zAcceleration) / 10.0f; // adjust as needed
@@ -189,27 +208,13 @@ public class PongGameView extends View implements SensorEventListener {
     }
 
     private Polygon getPaddlePolygon() {
-        float width = rect.width();
-        float height = rect.height();
         float centerX = rect.centerX();
         float centerY = rect.centerY();
-
         float angleInRadians = (float) Math.toRadians(paddleAngle);
 
-        List<Vector2> points = new ArrayList<>();
-        points.add(new Vector2(centerX - width / 2, centerY - height / 2));
-        points.add(new Vector2(centerX + width / 2, centerY - height / 2));
-        points.add(new Vector2(centerX + width / 2, centerY + height / 2));
-        points.add(new Vector2(centerX - width / 2, centerY + height / 2));
-
-        for (int i = 0; i < points.size(); i++) {
-            Vector2 point = points.get(i);
-            points.set(i, point.rotateAround(centerX, centerY, angleInRadians));
-        }
-
-        Polygon paddlePolygon = new Polygon();
-        paddlePolygon.setPoints(points);
-        return paddlePolygon;
+        return Polygon
+                .box(rect.left, rect.top, rect.right, rect.bottom)
+                .rotateAround(centerX, centerY, angleInRadians);
     }
 
     private void drawBorder(Canvas canvas) {

@@ -1,95 +1,95 @@
-# CPS-CA2-Motion-Controlled-Pong-Game
+# Motion Controlled Pong
 
-# README
+An Android Pong game played by tilting the phone. The accelerometer slides the
+paddle, the gyroscope rotates it, and collisions are resolved with the Separating
+Axis Theorem so the ball bounces correctly off a paddle held at an angle.
 
-## General Code Description
+![Separating Axis Theorem, overlap against gap](docs/sat_collision.png)
 
-This repository contains code for a simple 2D game developed in Java. The game features a bouncing ball that interacts with various objects, including a paddle and walls.
+## Requirements
 
-## Ball Class
+JDK 17, the Android SDK with platform 34, and a device or emulator running
+API 24 or later.
 
-The `Ball` class is responsible for managing the ball's position and velocity. The ball's position and velocity in the y-direction are defined by the formula: `y = ½ * g * t^2`, where `g` is the acceleration due to gravity.
+## Building and running
 
-## ResetButton Class
+```bash
+./gradlew assembleDebug
+```
 
-To reset the game, a reset button is embedded in the game interface.
+Install the resulting APK from `build/outputs/apk/debug/` on a device, or run the
+configuration from Android Studio.
 
-## Polygon Class
+```bash
+./gradlew test
+```
 
-The `Polygon` class maintains a list of 2D points using the `ArrayList` class. It features two essential functions:
+The geometry tests run on a plain JVM and need no device.
 
-- `setAsBox`: This function initializes the list of points to form a polygon with four sides, defined by the provided coordinates.
-- `getAxes`: This function returns a list of vectors that are perpendicular to each edge of the polygon.
+## Controls
 
-## 2Vector Class
+| sensor | effect |
+| --- | --- |
+| accelerometer | slides the paddle left and right, clamped to the screen |
+| gyroscope | rotates the paddle, clamped to a maximum angle |
+| linear acceleration | a flick along Z adds speed to the ball on the next hit |
 
-The `2Vector` class is used to store 2D point coordinates (x and y). It provides several essential functions:
+## Collision detection
 
-- `subtract`: Calculates the vector resulting from subtracting another vector.
-- `perpendicular`: Computes the vector that is perpendicular to the current vector by swapping the x and y components.
-- `dotProduct`: Computes the dot product between two vectors.
-- `rotateAround`: Rotates the vector around a specified center point by a given angle, either clockwise or counterclockwise.
+A rotated paddle is why this needs the Separating Axis Theorem rather than a
+rectangle overlap test. Once the paddle tilts it is no longer axis-aligned, and
+comparing bounding boxes either misses glancing hits or reports contact that
+never happened.
 
-## SATCollision Class
+SAT rests on one fact about convex shapes: if they are apart, some axis exists on
+which their shadows do not overlap, and that axis is perpendicular to an edge of
+one of them. The test is therefore finite. Project both shapes onto every edge
+normal; the first gap found proves separation and ends the search, and if no axis
+has a gap the shapes are in contact.
 
-The `SATCollision` class is used to detect collisions between various shapes in a 2D space.
+The `geometry` package holds this as plain JVM code with no Android imports, so
+it can be tested without a device.
 
-### `checkCollision` Function
+| class | responsibility |
+| --- | --- |
+| `Vector2` | Immutable 2D vector: subtract, perpendicular, dot product, rotate |
+| `Projection` | A shadow on an axis, as a minimum and maximum, and whether two overlap |
+| `Polygon` | Vertices, edge normals, projection onto an axis, rotation |
+| `SatCollision` | The overlap test itself |
 
-This function is designed to detect collisions between a polygon and a rectangle (`RectF`). It first creates a polygon that corresponds to the rectangle using the `setAsBox` function and then calls the `checkCollision` function with two input polygons.
+## Physics
 
-### `checkCollision` Function (Polygons)
+`Ball` integrates position and velocity per frame under constant downward
+acceleration. Gravity is defined in metres per second squared and converted
+through an explicit pixels-per-metre scale, since positions are in pixels;
+raising that scale gives a heavier, faster-falling ball.
 
-This function checks for collisions between two polygons. It first extracts the axis vectors for both polygons and collects them in a list. Then, for each axis, it checks for collision between the two polygons using the `project` and `overlap` functions. If no collision is found, it returns `false`; otherwise, it confirms the collision and returns `true`.
+Sensor listeners are registered in `onAttachedToWindow` and released in
+`onDetachedFromWindow`, so nothing keeps sampling once the view leaves the
+screen.
 
-### `project` Function
+## Project structure
 
-The `project` function calculates the points on a polygon projected onto a specified axis that have the maximum and minimum distances along that axis.
+```
+src/main/java/com/example/mypongv2/
+    geometry/          framework-free collision maths
+    Ball.java          position, velocity, gravity
+    PongGameView.java  rendering, sensor handling, game loop
+    ResetButton.java   the on-screen reset control
+    MainActivity.kt    entry point
+src/main/res/          layouts, drawables, themes
+src/test/java/         geometry tests, JVM only
+docs/                  figures referenced by this README
+build.gradle.kts       module configuration and dependencies
+settings.gradle.kts    repositories and project name
+```
 
-### `overlap` Function
+## Testing
 
-The `overlap` function checks if two intervals on a specified axis overlap.
+```bash
+./gradlew test
+```
 
-## PongViewGame Class
-
-The `PongViewGame` class is the main class responsible for the game's functionality. It includes various functions for handling different aspects of the game, including the use of sensors.
-
-### Constructor
-
-In the constructor, the `paint` and `rect` variables are initialized, and sensor information is obtained.
-
-### `onSizeChanged` Method
-
-This method determines the game's size and shape and sets the initial position of the ball at the beginning of the game.
-
-### `onDraw` Method
-
-The `onDraw` method handles the rotation of the paddle and updates the ball's position based on its speed. To calculate the time delta, it subtracts the current time from the last time and divides by 1000. This is essential for smooth updates, especially in cases where a frame rate of 30 frames per second is used (approximately 1/30 seconds per frame).
-
-### `onTouchEvent` Method
-
-When the user touches the reset button, the ball returns to its initial position.
-
-### `onSensorChanged` Method
-
-This method updates the player's rectangle position and angle based on sensor data. It also calls the `invalidate` method to redraw the game screen when sensor changes occur.
-
-If the sensor is an accelerometer, the method calculates the acceleration in the x-axis, multiplies it by a factor (`movementFactor`), and computes the new paddle position. The player moves the paddle to the left or right based on the device's acceleration.
-
-If the sensor is a gyroscope, the method calculates the player's angle by considering the device's rotation around the z-axis, subtracts it from the current angle, and calculates the new player angle. If the new angle exceeds the maximum allowed angle defined in the `maxAngleRotation` variable, the angle is adjusted.
-
-### `checkCollisions` Method
-
-This method checks if the ball has collided with the game's walls or the paddle. It then calculates the new velocity in the x and y directions using the provided formulas.
-
-### `getPaddlePolygon` Method
-
-The `getPaddlePolygon` method converts the player's rectangle coordinates into a polygon shape, considering the player's angle. This ensures accurate collision detection and reflection of the ball when it hits the paddle.
-
-### `drawBorder` Method
-
-The `drawBorder` method is responsible for drawing the game's border.
-
-Additionally, an optional feature has been added to move the paddle left and right and provide acceleration to the ball based on z-axis movement in the late stages of development.
-
-For more details on how to use this code and set up the game, please refer to the provided documentation or comments within the code files.
+Twenty-three tests across `Vector2`, `Polygon` and `SatCollision`, covering
+vector algebra, rotation, projection, encapsulation of polygon vertices, and
+collision in the overlapping, separated, touching, contained and rotated cases.
